@@ -91,7 +91,8 @@ if __name__ == '__main__':
 
     k1, b = 1.5, 0.75
     ave_doc_len = np.mean(doc_len)
-    value *= (k1 + 1) / (value + k1 * (1 - b + b * doc_len[row] / ave_doc_len))
-    tf = csr_matrix((value, (row, col)), shape=(FILE_NUM, len(idx2word)))
-    save_npz(os.path.join('preprocessed', 'tf.npz'), tf, compressed=False)
+    value *= (k1 + 1) / (value + k1 * (1 - b + b * doc_len[row] / ave_doc_len)) * idf[col]
+    tf_idf = csr_matrix((value, (row, col)), shape=(FILE_NUM, len(idx2word)))
+    
+    save_npz(os.path.join('preprocessed', 'tf_idf.npz'), tf_idf, compressed=False)
 
