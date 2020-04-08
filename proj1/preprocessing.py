@@ -39,8 +39,8 @@ def preprocessing(model_dir, document_dir):
             word_id = w1 - 1
         else:  # bigram
             word_id = len(idx2word) - 1
-            idx2word.append(idx2word[w1 - 1] + ' ' + idx2word[w2 - 1])
-            word2idx[idx2word[w1 - 1] + ' ' + idx2word[w2 - 1]] = word_id
+            idx2word.append(idx2word[w1 - 1] + idx2word[w2 - 1])
+            word2idx[idx2word[w1 - 1] + idx2word[w2 - 1]] = word_id
 
         idf[word_id] += n
         for _ in range(n):
@@ -51,15 +51,15 @@ def preprocessing(model_dir, document_dir):
             i += 1
         print(i, end='\r')
     print(np.mean(value))
-    idf = np.log((FILE_NUM - idf + 0.5) / (idf + 0.5))
+    idf = np.maximum(np.log((FILE_NUM - idf + 0.5) / (idf + 0.5)), 0.0)
 
     return idx2word, word2idx, np.array(row, np.int32), np.array(col, np.int32), np.array(value, np.float32), doc_len, idf
 
 def get_doc_len(filename):
     root = ET.parse(filename).getroot()
-    title = root.find('./doc/title').text
-    doc_len = len(title.strip()) if title is not None else 0
-    doc_len += np.sum([len(p.text.strip()) for p in root.findall('.//p')])
+    #title = root.find('./doc/title').text
+    #doc_len = len(title.strip()) if title is not None else 0
+    doc_len = np.sum([len(p.text.strip()) for p in root.findall('.//p')])
     return doc_len
 
 if __name__ == '__main__':
