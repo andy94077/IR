@@ -47,6 +47,20 @@ def get_query(query_file, word2idx, k3):
     value *= (k3 + 1) / (k3 + value)
     return query_id, csr_matrix((value, (row, col)), shape=(WORD_SIZE, len(query_id)), dtype=np.float32)
 
+def generate_csv(cos_sim, query_id, output_file):
+    df = []
+    for i in range(cos_sim.shape[1]):
+        rank = np.argsort(cos_sim[:, i])[:-101:-1]
+        df.append([query_id[i], ' '.join([file_id[j] for j in rank])])
+    df = pd.DataFrame(df, columns=['query_id', 'retrieved_docs'])
+    df.to_csv(output_file, index=False)
+
+def relevance_feedback(queries, alpha, beta, gamma, relevant_set, irrelevant_set):
+    queries = queries.T.toarray()
+    for i in range(queries.shape[0]):
+        queries[i] = alpha * queries[i] + beta / relevant_set[i].shape[0] * np.array(relevant_set[i].sum(axis=0)).ravel() - gamma / irrelevant_set[i].shape[0] * np.array(irrelevant_set[i].sum(axis=0)).ravel()
+    return csr_matrix(queries.T)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-r', '--relevance-feedback', action='store_true')
@@ -74,10 +88,9 @@ if __name__ == '__main__':
     #print(cos_sim[496, 0])
     #print(cos_sim[21256, 0])
     #exit()
-    threshold = 0.1
-    df = []
-    for i in range(cos_sim.shape[1]):
-        rank = np.argsort(cos_sim[:, i])[:-101:-1]
-        df.append([query_id[i], ' '.join([file_id[j] for j in rank])])
-    df = pd.DataFrame(df, columns=['query_id', 'retrieved_docs'])
-    df.to_csv(output_file, index=False)
+    if is_relevance_feedback:
+        argpartition = np.argpartition(cos_sim, 100, axis=0)
+        relevant_set, irrelevant_set = [tf_idf[argpartition[:100, i]] for i in range(argpartition.shape[1])], [tf_idf[argpartition[100:, i]] for i in range(argpartition.shape[1])]
+        queries = relevance_feedback(queries, 0.8, 0.15, 0.05, relevant_set, irrelevant_set)
+        cos_sim = (tf_idf * queries).toarray() / (scipy.sparse.linalg.norm(tf_idf, axis=1).reshape(-1, 1) + 1e-8) / scipy.sparse.linalg.norm(queries, axis=0)
+    generate_csv(cos_sim, query_id, output_file)
