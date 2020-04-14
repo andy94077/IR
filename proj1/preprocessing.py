@@ -4,16 +4,12 @@ import xml.etree.ElementTree as ET
 import numpy as np
 from scipy.sparse import csr_matrix, load_npz, save_npz
 
+import utils
+
 VOCAB_ALL_SIZE = 29907
 BIGRAM_SIZE = 1171247
 WORD_SIZE = VOCAB_ALL_SIZE + BIGRAM_SIZE
 FILE_NUM = 46972
-
-def load_npys(data_dir, args):
-    npys = [np.load(os.path.join(data_dir, i)) for i in args]
-    if len(args) == 1:
-        return npys[0]
-    return npys
 
 def preprocessing(model_dir, document_dir):
     '''
@@ -71,23 +67,25 @@ if __name__ == '__main__':
     model_dir = args.model_dir
     document_dir = args.document_dir
     
-    if not os.path.exists(os.path.join('preprocessed', 'idx2word.pickle')) or not os.path.exists(os.path.join('preprocessed', 'word2idx.pickle')) or not os.path.exists(os.path.join('preprocessed', 'row.npy')) or not os.path.exists(os.path.join('preprocessed', 'col.npy')) or not os.path.exists(os.path.join('preprocessed', 'value.npy')) or not os.path.exists(os.path.join('preprocessed', 'doc_len.npy')) or not os.path.exists(os.path.join('preprocessed', 'idf.npy')):
-        idx2word, word2idx, row, col, value, doc_len, idf = preprocessing(model_dir, document_dir)
-        with open(os.path.join('preprocessed', 'idx2word.pickle'), 'wb') as f:
-            pickle.dump(idx2word, f)
-        with open(os.path.join('preprocessed', 'word2idx.pickle'), 'wb') as f:
-            pickle.dump(word2idx, f)
-        np.save(os.path.join('preprocessed', 'row.npy'), row)
-        np.save(os.path.join('preprocessed', 'col.npy'), col)
-        np.save(os.path.join('preprocessed', 'value.npy'), value)
-        np.save(os.path.join('preprocessed', 'doc_len.npy'), doc_len)
-        np.save(os.path.join('preprocessed', 'idf.npy'), idf)
+    #if not os.path.exists(os.path.join('preprocessed', 'idx2word.pickle')) or not os.path.exists(os.path.join('preprocessed', 'word2idx.pickle')) or not os.path.exists(os.path.join('preprocessed', 'row.npy')) or not os.path.exists(os.path.join('preprocessed', 'col.npy')) or not os.path.exists(os.path.join('preprocessed', 'value.npy')) or not os.path.exists(os.path.join('preprocessed', 'doc_len.npy')) or not os.path.exists(os.path.join('preprocessed', 'idf.npy')):
+    idx2word, word2idx, row, col, value, doc_len, idf = preprocessing(model_dir, document_dir)
+    with open(os.path.join('preprocessed', 'idx2word.pickle'), 'wb') as f:
+        pickle.dump(idx2word, f)
+    with open(os.path.join('preprocessed', 'word2idx.pickle'), 'wb') as f:
+        pickle.dump(word2idx, f)
+    np.save(os.path.join('preprocessed', 'row.npy'), row)
+    np.save(os.path.join('preprocessed', 'col.npy'), col)
+    np.save(os.path.join('preprocessed', 'value.npy'), value)
+    np.save(os.path.join('preprocessed', 'doc_len.npy'), doc_len)
+    np.save(os.path.join('preprocessed', 'idf.npy'), idf)
+
+    '''
     else:
         with open(os.path.join('preprocessed', 'idx2word.pickle'), 'rb') as f:
             idx2word = pickle.load(f)
         with open(os.path.join('preprocessed', 'word2idx.pickle'), 'rb') as f:
             word2idx = pickle.load(f)
-        row, col, value, doc_len, idf = load_npys('preprocessed', ['row.npy', 'col.npy', 'value.npy', 'doc_len.npy', 'idf.npy'])
+        row, col, value, doc_len, idf = utils.load_npys('preprocessed', ['row.npy', 'col.npy', 'value.npy', 'doc_len.npy', 'idf.npy'])
 
     k1, b = 1.5, 0.75
     ave_doc_len = np.mean(doc_len)
@@ -95,4 +93,5 @@ if __name__ == '__main__':
     tf_idf = csr_matrix((value, (row, col)), shape=(FILE_NUM, len(idx2word)))
     
     save_npz(os.path.join('preprocessed', 'tf_idf.npz'), tf_idf, compressed=False)
+    '''
 
