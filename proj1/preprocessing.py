@@ -53,8 +53,6 @@ def preprocessing(model_dir, document_dir):
 
 def get_doc_len(filename):
     root = ET.parse(filename).getroot()
-    #title = root.find('./doc/title').text
-    #doc_len = len(title.strip()) if title is not None else 0
     doc_len = np.sum([len(p.text.strip()) for p in root.findall('.//p')])
     return doc_len
 
@@ -67,7 +65,6 @@ if __name__ == '__main__':
     model_dir = args.model_dir
     document_dir = args.document_dir
     
-    #if not os.path.exists(os.path.join('preprocessed', 'word2idx.pickle')) or not os.path.exists(os.path.join('preprocessed', 'row.npy')) or not os.path.exists(os.path.join('preprocessed', 'col.npy')) or not os.path.exists(os.path.join('preprocessed', 'value.npy')) or not os.path.exists(os.path.join('preprocessed', 'doc_len.npy')) or not os.path.exists(os.path.join('preprocessed', 'idf.npy')):
     word2idx, row, col, value, doc_len, idf = preprocessing(model_dir, document_dir)
     with open(os.path.join('preprocessed', 'word2idx.pickle'), 'wb') as f:
         pickle.dump(word2idx, f)
@@ -76,18 +73,4 @@ if __name__ == '__main__':
     np.save(os.path.join('preprocessed', 'value.npy'), value)
     np.save(os.path.join('preprocessed', 'doc_len.npy'), doc_len)
     np.save(os.path.join('preprocessed', 'idf.npy'), idf)
-
-    '''
-    else:
-        with open(os.path.join('preprocessed', 'word2idx.pickle'), 'rb') as f:
-            word2idx = pickle.load(f)
-        row, col, value, doc_len, idf = utils.load_npys('preprocessed', ['row.npy', 'col.npy', 'value.npy', 'doc_len.npy', 'idf.npy'])
-
-    k1, b = 1.5, 0.75
-    ave_doc_len = np.mean(doc_len)
-    value *= (k1 + 1) / (value + k1 * (1 - b + b * doc_len[row] / ave_doc_len)) * idf[col]
-    tf_idf = csr_matrix((value, (row, col)), shape=(FILE_NUM, WORD_SIZE))
-    
-    save_npz(os.path.join('preprocessed', 'tf_idf.npz'), tf_idf, compressed=False)
-    '''
 
