@@ -96,7 +96,7 @@ if __name__ == '__main__':
     with open(os.path.join('preprocessed', 'word2idx.pickle'), 'rb') as f:
         word2idx = pickle.load(f)
     row, col, value, doc_len, idf = utils.load_npys('preprocessed', ['row.npy', 'col.npy', 'value.npy', 'doc_len.npy', 'idf.npy'])
-    tf_idf = get_tf_idf(row, col, value, doc_len, idf, k1=1.5)
+    tf_idf = get_tf_idf(row, col, value, doc_len, idf, k1=1.8)
     file_id = get_file_id(model_dir, document_dir)
     file_id2idx = {x: i for i, x in enumerate(file_id)}
     query_id, queries = get_query(query_file, word2idx, 5)
@@ -109,7 +109,7 @@ if __name__ == '__main__':
     if is_relevance_feedback:
         argpartition = np.argpartition(cos_sim, 100, axis=0)
         relevant_set, irrelevant_set = [tf_idf[argpartition[:100, i]] for i in range(argpartition.shape[1])], [tf_idf[argpartition[100:, i]] for i in range(argpartition.shape[1])]
-        queries = relevance_feedback(queries, 0.8, 0.15, 0.05, relevant_set, irrelevant_set)
+        queries = relevance_feedback(queries, 0.75, 0.2, 0.05, relevant_set, irrelevant_set)
         cos_sim = (tf_idf * queries).toarray() / (scipy.sparse.linalg.norm(tf_idf, axis=1).reshape(-1, 1) + 1e-8) / scipy.sparse.linalg.norm(queries, axis=0)
 
     pred_ranks = predict(cos_sim)
