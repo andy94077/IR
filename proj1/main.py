@@ -107,8 +107,9 @@ if __name__ == '__main__':
     cos_sim = (tf_idf * queries).toarray() / (scipy.sparse.linalg.norm(tf_idf, axis=1).reshape(-1, 1) + 1e-8) / scipy.sparse.linalg.norm(queries, axis=0)
 
     if is_relevance_feedback:
-        argpartition = np.argpartition(cos_sim, 100, axis=0)
-        relevant_set, irrelevant_set = [tf_idf[argpartition[:100, i]] for i in range(argpartition.shape[1])], [tf_idf[argpartition[100:, i]] for i in range(argpartition.shape[1])]
+        top_rank = 60
+        argpartition = np.argpartition(cos_sim, top_rank, axis=0)
+        relevant_set, irrelevant_set = [tf_idf[argpartition[:top_rank, i]] for i in range(argpartition.shape[1])], [tf_idf[argpartition[top_rank:, i]] for i in range(argpartition.shape[1])]
         queries = relevance_feedback(queries, 0.75, 0.2, 0.05, relevant_set, irrelevant_set)
         cos_sim = (tf_idf * queries).toarray() / (scipy.sparse.linalg.norm(tf_idf, axis=1).reshape(-1, 1) + 1e-8) / scipy.sparse.linalg.norm(queries, axis=0)
 
