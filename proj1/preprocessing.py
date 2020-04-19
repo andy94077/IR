@@ -46,7 +46,7 @@ def preprocessing(model_dir, document_dir):
             value.append(count)
             i += 1
         print(i, end='\r')
-    print(np.mean(value))
+
     idf = np.maximum(np.log((FILE_NUM - idf + 0.5) / (idf + 0.5)), 0.0)
 
     return word2idx, np.array(row, np.int32), np.array(col, np.int32), np.array(value, np.float32), doc_len, idf
