@@ -15,13 +15,14 @@ from MatrixFactorization import MatrixFactorization
 def bpr_loss(y_true, y_pred):
     return tf.math.log(y_pred)
 
-def bce_generator(positiveX, num_users, num_items, batch_size=128, seed=None):
+def bce_generator(positiveX, num_users, num_items, batch_size=128, epochs=None, seed=None):
     positiveX_pair = np.array([[u, i] for u in range(num_users) for i in positiveX[u]])
     negativeX_pair = np.array([[u, i] for u in range(num_users) for i in np.setdiff1d(np.arange(num_items), positiveX[i], assume_unique=True)])
     if seed is not None:
         np.random.seed(seed)
 
-    while True:
+    epoch = 0
+    while epochs is None or epoch < epochs:
         positive_idx = np.random.permutation(positiveX_pair.shape[0])
         negative_idx = np.random.choice(max(negativeX_pair.shape[0], positiveX_pair.shape[0]), size=positiveX_pair.shape[0], replace=False) % negativeX_pair.shape[0]
         for i in range(0, positive_idx.shape[0], batch_size):
@@ -29,13 +30,16 @@ def bce_generator(positiveX, num_users, num_items, batch_size=128, seed=None):
             batch_negativeX_pair = negativeX_pair[negative_idx[i:i+batch_size]]
             yield np.concatenate([batch_positiveX_pair, batch_negativeX_pair], axis=0), np.concatenate([np.ones(batch_positiveX_pair.shape[0]), np.zeros(batch_negativeX_pair.shape[0])], axis=0)
 
-def bpr_generator(positiveX, num_users, num_items, batch_size=128, seed=None):
+        epoch += 1
+
+def bpr_generator(positiveX, num_users, num_items, batch_size=128, epochs=None, seed=None):
     positiveX_pair = np.array([[u, i] for u in range(num_users) for i in positiveX[u]])
     negativeX = [np.setdiff1d(np.arange(num_items), positiveX[i], assume_unique=True) for u in range(num_users)]
     if seed is not None:
         np.random.seed(seed)
 
-    while True:
+    epoch = 0
+    while epochs is None or epoch < epochs:
         positive_idx = np.random.permutation(positiveX_pair.shape[0])
         for i, _ in enumerate(negativeX):
             np.random.shuffle(negativeX[i])
@@ -43,6 +47,8 @@ def bpr_generator(positiveX, num_users, num_items, batch_size=128, seed=None):
             batch_positiveX_pair = positiveX_pair[positive_idx[i:i+batch_size]]
             batch_negativeX = np.array([[negativeX[u][n % len(negativeX[u])]] for u, n in zip(batch_positiveX_pair[:, 0], np.random.choice(num_items, size=batch_positiveX_pair.shape[0], replace=True))])
             yield np.concatenate([batch_positiveX_pair, batch_negativeX], axis=1), np.zeros(batch_positiveX_pair.shape[0])
+
+        epoch += 1
 
 
 if __name__ == '__main__':
@@ -65,16 +71,6 @@ if __name__ == '__main__':
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         tf.config.experimental.set_memory_growth(gpus[0], True)
-
-    max_seq_len = 32
-    w2v_model = Word2Vec().load(word2vec_model_path)
-    word2idx = w2v_model.get_word2idx()
-    embedding = w2v_model.get_embedding()
-    vocabulary_size = len(word2idx)
-    print(f'\033[32;1mvocabulary_size: {vocabulary_size}\033[0m')
-
-    if function not in globals():
-        globals()[function] = getattr(importlib.import_module(function[:function.rfind('.')]), function.split('.')[-1])
 
     if training:
         positiveX, num_users, num_items = utils.load_data(trainX_path)
@@ -102,20 +98,18 @@ if __name__ == '__main__':
         model.save(model_path)
     else:
         print('\033[32;1mLoading Model\033[0m')
-        load_model(model_path)
+        model = load_model(model_path)
 
 
     if test:
-        testX = utils.load_test_data(test[0], word2idx, max_seq_len)
-        pred = model.predict(testX, batch_size=256)
-        if ensemble:
-            np.save(test[1], pred)
-        else:
-            utils.generate_csv(pred, test[1])
+        pred = model.predict_topk(50)
+        utils.generate_csv(pred, test[1])
     else:
         if not training:
-            trainX, trainY = utils.load_train_data(labeled_path, word2idx, max_seq_len)
-            trainX, validX, trainY, validY = utils.train_test_split(trainX, trainY, split_ratio=0.1)
-            print(f'\033[32;1mtrainX: {trainX.shape}, validX: {validX.shape}, trainY: {trainY.shape}, validY: {validY.shape}\033[0m')
-        print(f'\033[32;1mTraining score: {model.evaluate(trainX, trainY, batch_size=256, verbose=0)}\033[0m')
-        print(f'\033[32;1mValidaiton score: {model.evaluate(validX, validY, batch_size=256, verbose=0)}\033[0m')
+            positiveX, num_users, num_items = utils.load_data(trainX_path)
+        if mode == 'bce':
+            generator = bce_generator
+        else:
+            generator = bpr_generator
+        print(f'\033[32;1mTraining score: {model.evaluate(generator(positiveX, num_users, num_items, epochs=1, batch_size=256), verbose=0)}\033[0m')
+        #print(f'\033[32;1mValidaiton score: {model.evaluate(validX, validY, batch_size=256, verbose=0)}\033[0m')
