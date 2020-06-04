@@ -19,3 +19,7 @@ def load_data(path):
         max_item_idx = max(ll+[max_item_idx])
 
     return positiveX, len(positiveX), max_item_idx + 1
+
+def generate_csv(pred, output_file):
+    df = pd.DataFrame(list(zip(range(len(pred)), map(' '.join, pred))), columns=['UserId', 'ItemId'])
+    pd.to_csv(output_file, index=False)
