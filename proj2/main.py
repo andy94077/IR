@@ -1,40 +1,48 @@
 import os, sys, argparse
 import numpy as np
-from tensorflow.keras.models import Sequential, Model, load_model
-from tensorflow.keras.layers import Input, CuDNNGRU, Dense, Embedding, Dropout, Bidirectional
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import InputLayer
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, CSVLogger, TensorBoard
 from tensorflow.keras import backend as K
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
 
 import utils
-from MatrixFactorization import MatrixFactorization
+from MatrixFactorization import MatrixFactorization, predict_topk
 
 def bpr_loss(y_true, y_pred):
     return tf.math.log(y_pred)
 
-def bce_generator(positiveX, num_users, num_items, batch_size=128, epochs=None, seed=None):
-    positiveX_pair = np.array([[u, i] for u in range(num_users) for i in positiveX[u]])
-    negativeX_pair = np.array([[u, i] for u in range(num_users) for i in np.setdiff1d(np.arange(num_items), positiveX[i], assume_unique=True)])
+def bce_generator(positiveX_pair, negativeX_pair, batch_size=128, epochs=None, seed=None):
     if seed is not None:
         np.random.seed(seed)
+    
+    ds_positive = tf.data.Dataset.from_tensor_slices(positiveX_pair)
+    ds_negative = tf.data.Dataset.from_tensor_slices(negativeX_pair).shuffle(100 * batch_size, reshuffle_each_iteration=True).take(positiveX_pair.shape[0])
+    dsX = ds_positive.concatenate(ds_negative)
 
-    epoch = 0
-    while epochs is None or epoch < epochs:
-        positive_idx = np.random.permutation(positiveX_pair.shape[0])
-        negative_idx = np.random.choice(max(negativeX_pair.shape[0], positiveX_pair.shape[0]), size=positiveX_pair.shape[0], replace=False) % negativeX_pair.shape[0]
-        for i in range(0, positive_idx.shape[0], batch_size):
-            batch_positiveX_pair = positiveX_pair[positive_idx[i:i+batch_size]]
-            batch_negativeX_pair = negativeX_pair[negative_idx[i:i+batch_size]]
-            yield np.concatenate([batch_positiveX_pair, batch_negativeX_pair], axis=0), np.concatenate([np.ones(batch_positiveX_pair.shape[0]), np.zeros(batch_negativeX_pair.shape[0])], axis=0)
+    dsY = tf.data.Dataset.from_tensor_slices([1.] * positiveX_pair.shape[0] + [0.] * positiveX_pair.shape[0])
+    ds = tf.data.Dataset.zip((dsX, dsY)).shuffle(2 * positiveX_pair.shape[0]).batch(2 * batch_size).repeat(epochs).prefetch(10)
 
-        epoch += 1
+    return ds
+    # while epochs is None or epoch < epochs:
+    #     np.random.shuffle(negativeX_pair)
+    #     positive_idx = np.random.permutation(positiveX_pair.shape[0])
+    #     negative_idx = np.random.choice(max(negativeX_pair.shape[0], positiveX_pair.shape[0]), size=positiveX_pair.shape[0], replace=False) % negativeX_pair.shape[0]
+    #     for i in range(0, positive_idx.shape[0], batch_size//2):
+    #         batch_positiveX_pair = positiveX_pair[positive_idx[i:i+batch_size//2]]
+    #         batch_negativeX_pair = negativeX_pair[negative_idx[i:i+batch_size//2]]
+    #         X = np.concatenate([batch_positiveX_pair, batch_negativeX_pair], axis=0)
+    #         Y = np.concatenate([np.ones(batch_positiveX_pair.shape[0]), np.zeros(batch_negativeX_pair.shape[0])], axis=0)
+            
+    #         yield X, Y
 
-def bpr_generator(positiveX, num_users, num_items, batch_size=128, epochs=None, seed=None):
-    positiveX_pair = np.array([[u, i] for u in range(num_users) for i in positiveX[u]])
-    negativeX = [np.setdiff1d(np.arange(num_items), positiveX[i], assume_unique=True) for u in range(num_users)]
+    #     epoch += 1
+
+def bpr_generator(positiveX_pair, negativeX, batch_size=128, epochs=None, seed=None):
     if seed is not None:
         np.random.seed(seed)
 
@@ -49,6 +57,7 @@ def bpr_generator(positiveX, num_users, num_items, batch_size=128, epochs=None, 
             yield np.concatenate([batch_positiveX_pair, batch_negativeX], axis=1), np.zeros(batch_positiveX_pair.shape[0])
 
         epoch += 1
+
 
 
 if __name__ == '__main__':
@@ -72,44 +81,65 @@ if __name__ == '__main__':
     if gpus:
         tf.config.experimental.set_memory_growth(gpus[0], True)
 
+    positiveX, num_users, num_items = utils.load_data(trainX_path)
+    positive = np.array([[u, i] for u in range(num_users) for i in positiveX[u]])
+
     if training:
-        positiveX, num_users, num_items = utils.load_data(trainX_path)
-        
+        print(f'\033[32;1mnum_users: {num_users}, num_items: {num_items}\033[0m')
         #trainX, validX, trainY, validY = utils.train_test_split(trainX, trainY, split_ratio=0.1)
         #print(f'\033[32;1mtrainX: {trainX.shape}, validX: {validX.shape}, trainY: {trainY.shape}, validY: {validY.shape}\033[0m')
 
         if mode == 'bce':
+            negative = np.concatenate([np.stack([np.array([u] * (num_items - len(positiveX[u]))),
+                                                 np.setdiff1d(np.arange(num_items), positiveX[u], assume_unique=True)], axis=1) for u in range(num_users)], axis=0)
+            positive, valid_positive = train_test_split(positive, test_size=0.1, random_state=880301)
+            negative, valid_negative = train_test_split(negative, test_size=0.1, random_state=880301)
+
             model = MatrixFactorization(num_users, num_items, latent_dim=128)
             model.compile(Adam(1e-3), loss='binary_crossentropy', metrics=['acc'])
             generator = bce_generator
         else:
+            negative = [np.setdiff1d(np.arange(num_items), positiveX[u], assume_unique=True) for u in range(num_users)]
+            
+            positive, valid_positive = train_test_split(positive, test_size=0.1, random_state=880301)
+            negative, valid_negative = train_test_split(negative, test_size=0.1, random_state=880301)
+            
             model = MatrixFactorization(num_users, num_items, latent_dim=128, regularizer=l2(1e-3))
             model.compile(Adam(1e-3), loss=bpr_loss)
             generator = bpr_generator
-        model.summary()
+        
+        print(f'\033[32;1mpositive: {positive.shape}, valid_positive: {valid_positive.shape}, negative: {negative.shape}, valid_negative: {valid_negative.shape}\033[0m')
 
-        checkpoint = ModelCheckpoint(model_path, 'val_loss', verbose=1, save_best_only=True, save_weights_only=True)
-        reduce_lr = ReduceLROnPlateau('val_loss', 0.8, 2, verbose=1, min_lr=1e-5)
+        checkpoint = ModelCheckpoint(model_path + '.h5', 'val_loss', verbose=1, save_best_only=True, save_weights_only=True)
+        reduce_lr = ReduceLROnPlateau('val_loss', 0.8, 3, verbose=1, min_lr=1e-5)
         #logger = CSVLogger(model_path+'.csv', append=True)
         #tensorboard = TensorBoard(model_path[:model_path.rfind('.')]+'_logs', histogram_freq=1, batch_size=1024, write_grads=True, write_images=True, update_freq=512)
-
-        model.fit(generator(positiveX, num_users, num_items, batch_size=256), epochs=10, steps_per_epoch=positiveX.shape[0]//batch_size, callbacks=[checkpoint, reduce_lr])
-        model.load_weights(model_path)
+        batch_size = 256
+        print('start fitting')
+        model.fit(generator(positive, negative, batch_size=batch_size), validation_data=generator(valid_positive, valid_negative, batch_size=batch_size), epochs=20, steps_per_epoch=positive.shape[0] // batch_size, validation_steps=valid_positive.shape[0] // batch_size, callbacks=[checkpoint, reduce_lr])
+        model.load_weights(model_path + '.h5')
         model.save(model_path)
+        os.remove(model_path + '.h5')
     else:
         print('\033[32;1mLoading Model\033[0m')
         model = load_model(model_path)
 
-
     if test:
-        pred = model.predict_topk(50)
-        utils.generate_csv(pred, test[1])
+        pred = predict_topk(model, 50, positive)
+        utils.generate_csv(pred, test)
     else:
         if not training:
-            positiveX, num_users, num_items = utils.load_data(trainX_path)
-        if mode == 'bce':
-            generator = bce_generator
-        else:
-            generator = bpr_generator
-        print(f'\033[32;1mTraining score: {model.evaluate(generator(positiveX, num_users, num_items, epochs=1, batch_size=256), verbose=0)}\033[0m')
-        #print(f'\033[32;1mValidaiton score: {model.evaluate(validX, validY, batch_size=256, verbose=0)}\033[0m')
+            if mode == 'bce':
+                negative = np.concatenate([np.stack([np.array([u] * (num_items - len(positiveX[u]))),
+                                                    np.setdiff1d(np.arange(num_items), positiveX[u], assume_unique=True)], axis=1) for u in range(num_users)], axis=0)
+                positive, valid_positive = train_test_split(positive, test_size=0.1, random_state=880301)
+                negative, valid_negative = train_test_split(negative, test_size=0.1, random_state=880301)
+                generator = bce_generator
+            else:
+                negative = [np.setdiff1d(np.arange(num_items), positiveX[u], assume_unique=True) for u in range(num_users)]
+
+                generator = bpr_generator
+            print(f'\033[32;1mpositive: {positive.shape}, valid_positive: {valid_positive.shape}, negative: {negative.shape}, valid_negative: {valid_negative.shape}\033[0m')
+        
+        print(f'\033[32;1mTraining score: {model.evaluate(generator(positive, negative, epochs=1, batch_size=512), verbose=0)}\033[0m')
+        print(f'\033[32;1mValidaiton score: {model.evaluate(generator(valid_positive, valid_negative, epochs=1, batch_size=512), verbose=0)}\033[0m')
