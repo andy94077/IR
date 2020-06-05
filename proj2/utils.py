@@ -16,10 +16,11 @@ def load_data(path):
     positiveX = [[int(i) for i in ll.split()] for ll in df.iloc[:, 1]]
     max_item_idx = 0
     for ll in positiveX:
-        max_item_idx = max(ll+[max_item_idx])
+        max_item_idx = max(ll + [max_item_idx])
+        assert np.all(len(ll) == len(np.unique(ll))), print(np.diff(sorted(ll)))
 
     return positiveX, len(positiveX), max_item_idx + 1
 
 def generate_csv(pred, output_file):
-    df = pd.DataFrame(list(zip(range(len(pred)), map(' '.join, pred))), columns=['UserId', 'ItemId'])
-    pd.to_csv(output_file, index=False)
+    df = pd.DataFrame(list(zip(range(len(pred)), map(' '.join, pred.astype(str)))), columns=['UserId', 'ItemId'])
+    df.to_csv(output_file, index=False)
