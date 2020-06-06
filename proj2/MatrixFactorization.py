@@ -8,9 +8,6 @@ import tensorflow as tf
 class MatrixFactorization(Model):
     def __init__(self, num_users, num_items, latent_dim, regularizer=None, **kwargs):
         super(MatrixFactorization, self).__init__(**kwargs)
-        self.num_users = num_users
-        self.num_items = num_items
-        self.latent_dim = latent_dim
         self.user_embedding = Embedding(num_users, latent_dim, embeddings_regularizer=regularizer, name='user_embedding')
         self.item_embedding = Embedding(num_items, latent_dim, embeddings_regularizer=regularizer, name='item_embedding')
 
@@ -26,11 +23,7 @@ class MatrixFactorization(Model):
 
         return x
 
-    # def get_config(self):
-    #     config = super(MatrixFactorization, self).get_config()
-    #     config.update(dict(num_users=self.num_users, num_items=self.num_items, latent_dim=self.latent_dim, predict_topk=self.predict_topk))
-
-def predict_topk(model, topk, positive):
-    matrix = tf.matmul(model.user_embedding.weights[0], model.item_embedding.weights[0], transpose_b=True).numpy()
-    matrix[positive[:, 0], positive[:, 1]] = 0
-    return np.argsort(matrix, axis=1)[:, :-topk + 1:-1]
+    def predict_topk(self, topk, positive):
+        matrix = self.user_embedding.get_weights()[0] @ self.item_embedding.get_weights()[0].T
+        matrix[positive[:, 0], positive[:, 1]] = 0
+        return np.argsort(matrix, axis=1)[:, :-topk + 1:-1]
