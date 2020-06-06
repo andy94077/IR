@@ -11,7 +11,7 @@ import tensorflow as tf
 from sklearn.model_selection import train_test_split
 
 import utils
-from MatrixFactorization import MatrixFactorization, predict_topk
+from MatrixFactorization import MatrixFactorization
 
 def bpr_loss(y_true, y_pred):
     return tf.math.log(y_pred)
@@ -58,21 +58,34 @@ def bpr_generator(positiveX_pair, negativeX, batch_size=128, epochs=None, seed=N
 
         epoch += 1
 
-
+def prepare_training(mode, positiveX, positive, num_users, num_items):
+    if mode == 'bce':
+        negative = np.concatenate([np.stack([np.array([u] * (num_items - len(positiveX[u]))),
+                                             np.setdiff1d(np.arange(num_items), positiveX[u], assume_unique=True)], axis=1) for u in range(num_users)], axis=0)
+        generator = bce_generator
+    else:
+        negative = [np.setdiff1d(np.arange(num_items), positiveX[u], assume_unique=True) for u in range(num_users)]
+        generator = bpr_generator
+    
+    positive, valid_positive = train_test_split(positive, test_size=0.1, random_state=880301)
+    negative, valid_negative = train_test_split(negative, test_size=0.1, random_state=880301)
+    print(f'\033[32;1mpositive: {positive.shape}, valid_positive: {valid_positive.shape}, negative: {negative.shape}, valid_negative: {valid_negative.shape}\033[0m')
+    return positive, valid_positive, negative, valid_negative, generator
+        
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('training_file', help='training file')
     parser.add_argument('model_path')
     parser.add_argument('mode', help="model mode = ['bce', 'bpr']")
-    parser.add_argument('-t', '--training-file', help='training file')
     parser.add_argument('-T', '--no-training', action='store_true')
     parser.add_argument('-s', '--test', type=str, help='output file')
     parser.add_argument('-g', '--gpu', type=str, default='')
     args = parser.parse_args()
 
+    trainX_path = args.training_file
     model_path = args.model_path
     mode = args.mode
-    trainX_path = args.training_file
     training = not args.no_training
     test = args.test
 
@@ -82,64 +95,39 @@ if __name__ == '__main__':
         tf.config.experimental.set_memory_growth(gpus[0], True)
 
     positiveX, num_users, num_items = utils.load_data(trainX_path)
+    print(f'\033[32;1mnum_users: {num_users}, num_items: {num_items}\033[0m')
     positive = np.array([[u, i] for u in range(num_users) for i in positiveX[u]])
 
+    if mode == 'bce':
+        model = MatrixFactorization(num_users, num_items, latent_dim=128)
+        model.build((None, 2))
+        model.compile(Adam(1e-3), loss='binary_crossentropy', metrics=['acc'])
+    else:
+        model = MatrixFactorization(num_users, num_items, latent_dim=128, regularizer=l2(1e-3))
+        model.build((None, 3))
+        model.compile(Adam(1e-3), loss=bpr_loss)
+    model.summary()
+
     if training:
-        print(f'\033[32;1mnum_users: {num_users}, num_items: {num_items}\033[0m')
-        #trainX, validX, trainY, validY = utils.train_test_split(trainX, trainY, split_ratio=0.1)
-        #print(f'\033[32;1mtrainX: {trainX.shape}, validX: {validX.shape}, trainY: {trainY.shape}, validY: {validY.shape}\033[0m')
+        positive, valid_positive, negative, valid_negative, generator = prepare_training(mode, positiveX, positive, num_users, num_items)
 
-        if mode == 'bce':
-            negative = np.concatenate([np.stack([np.array([u] * (num_items - len(positiveX[u]))),
-                                                 np.setdiff1d(np.arange(num_items), positiveX[u], assume_unique=True)], axis=1) for u in range(num_users)], axis=0)
-            positive, valid_positive = train_test_split(positive, test_size=0.1, random_state=880301)
-            negative, valid_negative = train_test_split(negative, test_size=0.1, random_state=880301)
-
-            model = MatrixFactorization(num_users, num_items, latent_dim=128)
-            model.compile(Adam(1e-3), loss='binary_crossentropy', metrics=['acc'])
-            generator = bce_generator
-        else:
-            negative = [np.setdiff1d(np.arange(num_items), positiveX[u], assume_unique=True) for u in range(num_users)]
-            
-            positive, valid_positive = train_test_split(positive, test_size=0.1, random_state=880301)
-            negative, valid_negative = train_test_split(negative, test_size=0.1, random_state=880301)
-            
-            model = MatrixFactorization(num_users, num_items, latent_dim=128, regularizer=l2(1e-3))
-            model.compile(Adam(1e-3), loss=bpr_loss)
-            generator = bpr_generator
-        
-        print(f'\033[32;1mpositive: {positive.shape}, valid_positive: {valid_positive.shape}, negative: {negative.shape}, valid_negative: {valid_negative.shape}\033[0m')
-
-        checkpoint = ModelCheckpoint(model_path + '.h5', 'val_loss', verbose=1, save_best_only=True, save_weights_only=True)
+        checkpoint = ModelCheckpoint(model_path, 'val_loss', verbose=1, save_best_only=True, save_weights_only=True)
         reduce_lr = ReduceLROnPlateau('val_loss', 0.8, 3, verbose=1, min_lr=1e-5)
         #logger = CSVLogger(model_path+'.csv', append=True)
         #tensorboard = TensorBoard(model_path[:model_path.rfind('.')]+'_logs', histogram_freq=1, batch_size=1024, write_grads=True, write_images=True, update_freq=512)
         batch_size = 256
         print('start fitting')
         model.fit(generator(positive, negative, batch_size=batch_size), validation_data=generator(valid_positive, valid_negative, batch_size=batch_size), epochs=20, steps_per_epoch=positive.shape[0] // batch_size, validation_steps=valid_positive.shape[0] // batch_size, callbacks=[checkpoint, reduce_lr])
-        model.load_weights(model_path + '.h5')
-        model.save(model_path)
-        os.remove(model_path + '.h5')
     else:
         print('\033[32;1mLoading Model\033[0m')
-        model = load_model(model_path)
 
+    model.load_weights(model_path)
     if test:
-        pred = predict_topk(model, 50, positive)
+        pred = model.predict_topk(50, positive)
         utils.generate_csv(pred, test)
     else:
         if not training:
-            if mode == 'bce':
-                negative = np.concatenate([np.stack([np.array([u] * (num_items - len(positiveX[u]))),
-                                                    np.setdiff1d(np.arange(num_items), positiveX[u], assume_unique=True)], axis=1) for u in range(num_users)], axis=0)
-                positive, valid_positive = train_test_split(positive, test_size=0.1, random_state=880301)
-                negative, valid_negative = train_test_split(negative, test_size=0.1, random_state=880301)
-                generator = bce_generator
-            else:
-                negative = [np.setdiff1d(np.arange(num_items), positiveX[u], assume_unique=True) for u in range(num_users)]
-
-                generator = bpr_generator
-            print(f'\033[32;1mpositive: {positive.shape}, valid_positive: {valid_positive.shape}, negative: {negative.shape}, valid_negative: {valid_negative.shape}\033[0m')
+            positive, valid_positive, negative, valid_negative, generator = prepare_training(mode, positiveX, positive, num_users, num_items)
         
         print(f'\033[32;1mTraining score: {model.evaluate(generator(positive, negative, epochs=1, batch_size=512), verbose=0)}\033[0m')
         print(f'\033[32;1mValidaiton score: {model.evaluate(generator(valid_positive, valid_negative, epochs=1, batch_size=512), verbose=0)}\033[0m')
