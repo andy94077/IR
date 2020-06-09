@@ -18,7 +18,7 @@ def bpr_loss(y_true, y_pred):
 
 def bce_generator(positiveX_pair, negativeX_pair, batch_size=128, epochs=None, seed=None):
     ds_positive = tf.data.Dataset.from_tensor_slices(positiveX_pair)
-    ds_negative = tf.data.Dataset.from_tensor_slices(negativeX_pair).shuffle(100 * batch_size, seed=seed, reshuffle_each_iteration=True).take(positiveX_pair.shape[0])
+    ds_negative = tf.data.Dataset.from_tensor_slices(negativeX_pair).shuffle(positiveX_pair.shape[0], seed=seed, reshuffle_each_iteration=True).take(positiveX_pair.shape[0])
     dsX = ds_positive.concatenate(ds_negative)
 
     dsY = tf.data.Dataset.from_tensor_slices([1.] * positiveX_pair.shape[0] + [0.] * positiveX_pair.shape[0])
@@ -83,15 +83,15 @@ if __name__ == '__main__':
         model = MatrixFactorization(num_users, num_items, latent_dim=128, input_shape=(2,))
         model.compile(Adam(1e-3), loss='binary_crossentropy', metrics=['acc'])
     else:
-        model = MatrixFactorization(num_users, num_items, latent_dim=128, input_shape=(3,), regularizer=l2(1e-8))
+        model = MatrixFactorization(num_users, num_items, latent_dim=128, input_shape=(3,), regularizer=l2(1e-6))
         model.compile(Adam(1e-4), loss=bpr_loss, metrics=[bpr_loss])
     model.summary()
 
     if training:
         positive, valid_positive, negative, valid_negative, generator = prepare_training(mode, positiveX, positive, num_users, num_items)
 
-        checkpoint = ModelCheckpoint(model_path, 'val_loss', verbose=1, save_best_only=True, save_weights_only=True)
-        reduce_lr = ReduceLROnPlateau('val_loss', 0.8, 20, verbose=1, min_lr=1e-6)
+        checkpoint = ModelCheckpoint(model_path, 'val_bpr_loss' if mode == 'bpr' else 'val_loss', verbose=1, save_best_only=True, save_weights_only=True)
+        reduce_lr = ReduceLROnPlateau('val_bpr_loss' if mode == 'bpr' else 'val_loss', 0.8, 20, verbose=1, min_lr=1e-6)
         #logger = CSVLogger(model_path+'.csv', append=True)
         #tensorboard = TensorBoard(model_path[:model_path.rfind('.')]+'_logs', histogram_freq=1, batch_size=1024, write_grads=True, write_images=True, update_freq=512)
         batch_size = 256
