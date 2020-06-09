@@ -89,7 +89,7 @@ if __name__ == '__main__':
         model = MatrixFactorization(num_users, num_items, latent_dim=128, input_shape=(2,))
         model.compile(Adam(1e-3), loss='binary_crossentropy', metrics=['acc'])
     else:
-        model = MatrixFactorization(num_users, num_items, latent_dim=256, input_shape=(3,), regularizer=l2(1e-6))
+        model = MatrixFactorization(num_users, num_items, latent_dim=128, input_shape=(3,), regularizer=l2(1e-6))
         model.compile(Adam(1e-4), loss=bpr_loss, metrics=[bpr_loss])
     model.summary()
 
