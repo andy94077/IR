@@ -25,5 +25,5 @@ class MatrixFactorization(Model):
 
     def predict_topk(self, topk, positive):
         matrix = self.user_embedding.get_weights()[0] @ self.item_embedding.get_weights()[0].T
-        matrix[positive[:, 0], positive[:, 1]] = 0
+        matrix[positive[:, 0], positive[:, 1]] = -np.inf
         return np.argsort(matrix, axis=1)[:, :-topk + 1:-1]
